@@ -74,9 +74,11 @@ current `cpp/`.
   the wasm module currently loaded, it shows *"Version X is available. Would you like to
   update?"*. On **Yes** it downloads that release's `calc.wasm`, re-instantiates
   ([`WasmCalc.update`](webassembly/src/main/java/com/devandrefigueiredo/wasmtests/wasm/WasmCalc.kt)),
-  and delivers the result with the new module — no restart. Offline, it keeps the last
-  module that loaded. The label under Submit always says which version produced the
-  result (`· v0.1`).
+  and delivers the result with the new module — no restart. The downloaded module is
+  also saved to the app's internal storage, so killing and reopening the app comes back
+  on it instead of the bundled `0.1` (and doesn't offer the same update again). Offline,
+  it keeps serving the last saved (or bundled) module. The label under Submit always
+  says which version produced the result (`· v0.1`).
 
 ## Demo script
 
@@ -94,6 +96,8 @@ C++ — one is contained, the other takes the whole app down.
 **Act 2 — hot update (no rebuild, no restart)**
 
 Start with the app open at `v0.1`, `10 / 4` on **WebAssembly** → `2` (integer division).
+The downloaded module survives restarts, so to replay the act after an update, reset the
+app to its bundled module with `adb shell pm clear com.devandrefigueiredo.wasmtests`.
 
 1. Edit [`cpp/calc.cpp`](cpp/calc.cpp): change `return (double)(a / b);` to
    `return (double)a / (double)b;`.
@@ -114,6 +118,7 @@ Built and exercised on an Android 16 `x86_64` emulator:
 | 10 / 0 | WebAssembly | `erro` + caught `TrapException`, app alive |
 | 10 / 0 | JNI | `Fatal signal 4 (SIGILL)` from `libcalc.so`, process dead |
 | update to a newer release | WebAssembly | dialog → Yes → downloads, re-instantiates, `· v0.2`, no restart |
+| kill + relaunch after the update | WebAssembly | loads the saved module, same version, no dialog |
 
 CI is green: pushing `master` published release `v0.1` with `calc.wasm` attached, and
 the app upgraded to it live (verified against the real release with a throwaway build
