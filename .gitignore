@@ -12,3 +12,6 @@ webassembly/src/main/assets/calc.wasm
 # IDE
 .idea/
 *.iml
+
+# local demo patches (kept out of the repo/commit so `git add -A` never sweeps them in)
+*.patch
