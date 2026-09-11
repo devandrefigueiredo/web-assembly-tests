@@ -1,0 +1,38 @@
+name: release
+
+# Every push to master publishes a release. The release version comes from
+# webassembly/VERSION; bump it to make a new "latest" the app will offer to update to.
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang + lld (wasm backend)
+        run: sudo apt-get update && sudo apt-get install -y clang lld
+
+      - name: Read version
+        id: ver
+        run: echo "version=$(tr -d '[:space:]' < webassembly/VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Build calc.wasm from cpp/ (same core as the app)
+        run: |
+          clang --target=wasm32 -nostdlib -O2 \
+            -Wl,--no-entry -Wl,--export-all \
+            -o calc.wasm cpp/calc.cpp
+          ls -la calc.wasm
+
+      - name: Publish release v${{ steps.ver.outputs.version }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: v${{ steps.ver.outputs.version }}
+          make_latest: true
+          files: calc.wasm
