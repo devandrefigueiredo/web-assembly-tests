@@ -1,14 +1,21 @@
 # web-assembly-tests
 
-A POC that shows **resilience/containment**: the *same* C++ core, compiled by the
-*same* compiler (the Android NDK's clang) into two transports, behaves in opposite
-ways on a division by zero.
+A POC with two points, both from the *same* C++ core compiled by the *same* compiler
+(the Android NDK's clang) into two transports:
+
+**1. Resilience / containment** — on a division by zero the two transports diverge:
 
 - **JNI** (native `.so`): the fault raises a native signal (SIGILL) that **kills the
   whole process** — a Kotlin `try/catch` does not save it.
 - **WebAssembly** (interpreted by [Chicory](https://github.com/dylibso/chicory) inside
   the JVM): the same fault is a wasm trap that surfaces as an ordinary
   `RuntimeException`, so a normal `try/catch` **contains it and the app stays alive**.
+
+**2. Hot update** — the wasm module is not frozen into the APK the way the `.so` is.
+The frozen ABI is `double calc_divide(int, int)`; only its *body* changes between
+versions. Every push to `master` publishes a GitHub release with a fresh `calc.wasm`,
+and the app offers to download the latest and **re-instantiate it without a restart**.
+The native side would need a whole new app build (and a store review) to change.
 
 ## Folders
 
@@ -55,7 +62,25 @@ cd test_app
 (`preBuild.dependsOn(buildWasm)`), so the `.wasm` is always regenerated from the
 current `cpp/`.
 
+## Releases & hot update
+
+- **CI** ([`.github/workflows/release.yml`](.github/workflows/release.yml)): on every
+  push to `master`, GitHub Actions installs `clang`+`lld`, compiles `cpp/calc.cpp` to
+  `calc.wasm`, and publishes a release tagged `v<version>` — the version read from
+  [`webassembly/VERSION`](webassembly/VERSION) — with `calc.wasm` attached. Bump
+  `VERSION` to make a new "latest".
+- **The app** ships bundled at `0.1` (JNI + wasm both at `0.1`). On a WebAssembly
+  submit it asks the public `releases/latest` API; if the latest version is higher than
+  the wasm module currently loaded, it shows *"Version X is available. Would you like to
+  update?"*. On **Yes** it downloads that release's `calc.wasm`, re-instantiates
+  ([`WasmCalc.update`](webassembly/src/main/java/com/devandrefigueiredo/wasmtests/wasm/WasmCalc.kt)),
+  and delivers the result with the new module — no restart. Offline, it keeps the last
+  module that loaded. The label under Submit always says which version produced the
+  result (`· v0.1`).
+
 ## Demo script
+
+**Act 1 — resilience**
 
 1. `10 / 2`, **WebAssembly** → `5`. `10 / 2`, **JNI** → `5`. Both engines agree.
 2. `10 / 0`, **WebAssembly** → the result shows `erro`, a toast says
@@ -66,13 +91,30 @@ current `cpp/`.
 Put step 2 and step 3 side by side: the same `try/catch`, the same input, the same
 C++ — one is contained, the other takes the whole app down.
 
+**Act 2 — hot update (no rebuild, no restart)**
+
+Start with the app open at `v0.1`, `10 / 4` on **WebAssembly** → `2` (integer division).
+
+1. Edit [`cpp/calc.cpp`](cpp/calc.cpp): change `return (double)(a / b);` to
+   `return (double)a / (double)b;`.
+2. Bump [`webassembly/VERSION`](webassembly/VERSION) to `0.2`.
+3. Commit and push to `master`. CI publishes release `v0.2` with the new `calc.wasm`.
+4. Back in the **still-running** app, press Submit again on **WebAssembly**. The dialog
+   *"Version 0.2 is available…"* appears → **Yes** → `10 / 4 = 2.5`, label `· v0.2`.
+5. Switch to **JNI** and Submit: still `2`, label `· built-in v0.1` — the native side
+   didn't change, because it can't without a new app build.
+
 ## Verified
 
 Built and exercised on an Android 16 `x86_64` emulator:
 
 | input | engine | outcome |
 | --- | --- | --- |
-| 10 / 2 | JNI | `5`, app alive |
-| 10 / 2 | WebAssembly | `5`, app alive |
+| 10 / 4 | WebAssembly | `2`, app alive, `· v0.1` (integer division widened to double) |
 | 10 / 0 | WebAssembly | `erro` + caught `TrapException`, app alive |
 | 10 / 0 | JNI | `Fatal signal 4 (SIGILL)` from `libcalc.so`, process dead |
+| update to a newer release | WebAssembly | dialog → Yes → downloads, re-instantiates, `· v0.2`, no restart |
+
+CI is green: pushing `master` published release `v0.1` with `calc.wasm` attached, and
+the app upgraded to it live (verified against the real release with a throwaway build
+whose baseline was `0.0`).
