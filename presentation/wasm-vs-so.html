@@ -1,0 +1,1054 @@
+<title>Wasm over .so</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  :root {
+    --bg: #E9EDF1;
+    --surface: #FBFCFD;
+    --ink: #10141A;
+    --muted: #5B6574;
+    --line: #D3DAE2;
+    --wasm: #4A43C4;
+    --wasm-soft: #E6E5FA;
+    --native: #B03A24;
+    --native-soft: #F8E5E0;
+    --ok: #1C7A52;
+    --ok-soft: #DDF1E7;
+    --code-bg: #141920;
+    --code-ink: #D8DEE7;
+    --code-muted: #7B8694;
+    --ck: #C3A6FF;
+    --cs: #A3DBAA;
+    --cf: #86C8FF;
+    --ct: #F2C27B;
+    --cn: #F7A18E;
+    --balloon: #10141A;
+    --balloon-ink: #F2F4F7;
+    --balloon-muted: #8E98A6;
+
+    --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+    --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #0C0F14;
+      --surface: #141920;
+      --ink: #E6EAF0;
+      --muted: #8E98A6;
+      --line: #252C36;
+      --wasm: #A29DFF;
+      --wasm-soft: #25234C;
+      --native: #FF8C74;
+      --native-soft: #3A1E18;
+      --ok: #5ED3A0;
+      --ok-soft: #14352A;
+      --code-bg: #0A0D12;
+      --balloon: #E6EAF0;
+      --balloon-ink: #10141A;
+      --balloon-muted: #5B6574;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0C0F14;
+    --surface: #141920;
+    --ink: #E6EAF0;
+    --muted: #8E98A6;
+    --line: #252C36;
+    --wasm: #A29DFF;
+    --wasm-soft: #25234C;
+    --native: #FF8C74;
+    --native-soft: #3A1E18;
+    --ok: #5ED3A0;
+    --ok-soft: #14352A;
+    --code-bg: #0A0D12;
+    --balloon: #E6EAF0;
+    --balloon-ink: #10141A;
+    --balloon-muted: #5B6574;
+  }
+
+  /* language + mode switching */
+  :root:not([data-lang="pt"]) [data-l="pt"],
+  :root[data-lang="pt"] [data-l="en"] { display: none !important; }
+  :root:not([data-mode="study"]) .study-only,
+  :root[data-mode="study"] .demo-only { display: none !important; }
+
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    padding-inline: 16px;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--wasm); outline-offset: 3px; border-radius: 3px; }
+
+  .deck { height: 100%; display: grid; grid-template-rows: auto 1fr auto; max-width: 1600px; margin-inline: auto; }
+
+  /* top bar */
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 14px 10px; }
+  .brand { font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: .04em; }
+  .brand b { color: var(--ink); font-weight: 600; }
+  .pickers { display: flex; gap: 22px; }
+  .picker { position: relative; }
+  .label {
+    font-family: var(--mono); font-size: 12.5px; color: var(--muted);
+    letter-spacing: .06em; padding: 2px 0; line-height: 1.4;
+  }
+  .label:hover, .label[aria-expanded="true"] { color: var(--ink); }
+  .balloon {
+    position: absolute; top: calc(100% + 10px); right: -10px; z-index: 20;
+    background: var(--balloon); color: var(--balloon-ink);
+    border-radius: 10px; padding: 5px; min-width: 76px;
+    display: flex; flex-direction: column; gap: 2px;
+    box-shadow: 0 10px 30px rgba(10, 14, 20, .22);
+    transform-origin: top right;
+    animation: inflate .16s cubic-bezier(.2, .9, .3, 1.3);
+  }
+  .balloon::before {
+    content: ""; position: absolute; top: -5px; right: 16px;
+    width: 10px; height: 10px; background: var(--balloon); transform: rotate(45deg); border-radius: 2px;
+  }
+  .balloon button {
+    position: relative; font-family: var(--mono); font-size: 12.5px; text-align: left;
+    padding: 6px 10px; border-radius: 6px; color: var(--balloon-muted); display: flex; gap: 8px; align-items: center;
+  }
+  .balloon button::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: transparent; }
+  .balloon button[aria-checked="true"] { color: var(--balloon-ink); }
+  .balloon button[aria-checked="true"]::before { background: currentColor; }
+  .balloon button:hover { color: var(--balloon-ink); background: color-mix(in srgb, var(--balloon-ink) 10%, transparent); }
+  @keyframes inflate { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+  /* stage */
+  .viewport { overflow: auto; display: grid; place-items: center; min-height: 0; }
+  :root[data-mode="study"] .viewport { place-items: start center; }
+  .frame { container-type: inline-size; width: min(100%, calc((100dvh - 118px) * 16 / 9)); }
+  :root[data-mode="study"] .frame { width: min(100%, 1080px); padding-block: 4px 32px; }
+  .stage {
+    --u: 1cqw;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    position: relative;
+  }
+  :root[data-mode="study"] .stage { aspect-ratio: auto; overflow: visible; --u: min(1cqw, 11px); }
+  @media (max-width: 760px) {
+    .frame { width: 100%; }
+    .stage { aspect-ratio: auto; overflow: visible; --u: 9.5px; }
+    .viewport { place-items: start center; padding-bottom: 16px; }
+  }
+
+  .slide {
+    height: 100%;
+    padding: calc(var(--u) * 4.2) calc(var(--u) * 5);
+    display: flex; flex-direction: column; gap: calc(var(--u) * 2.4);
+  }
+  :root[data-mode="study"] .slide { gap: calc(var(--u) * 3); padding-bottom: calc(var(--u) * 5); }
+
+  .eyebrow {
+    font-family: var(--mono); font-size: calc(var(--u) * 1.05); color: var(--muted);
+    text-transform: uppercase; letter-spacing: .14em; display: flex; gap: calc(var(--u) * 1.6); align-items: center; flex-wrap: wrap;
+  }
+  .cue {
+    color: var(--wasm); background: var(--wasm-soft); padding: .3em .7em; border-radius: 99px; letter-spacing: .1em;
+  }
+  .time { margin-left: auto; letter-spacing: .06em; }
+  h1, h2 {
+    font-family: var(--display); font-stretch: 84%; font-weight: 750;
+    letter-spacing: -.015em; text-wrap: balance; margin: 0;
+  }
+  h2 { font-size: calc(var(--u) * 3.5); line-height: 1.06; margin-top: calc(var(--u) * -1.2); }
+  h2 em, h1 em { font-style: normal; color: var(--wasm); }
+  h2 .nat, h1 .nat { color: var(--native); }
+
+  .body { flex: 1; min-height: 0; display: grid; gap: calc(var(--u) * 3.5); }
+  .split { grid-template-columns: minmax(0, 1fr) minmax(0, 1.55fr); align-items: start; }
+  .split-even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+  :root[data-mode="study"] .body { display: flex; flex-direction: column; gap: calc(var(--u) * 3.5); }
+  @media (max-width: 760px) { .body { display: flex; flex-direction: column; } }
+
+  .points { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: calc(var(--u) * 1.5); }
+  .points li {
+    font-size: calc(var(--u) * 1.62); line-height: 1.34; padding-left: calc(var(--u) * 2.1); position: relative; text-wrap: pretty;
+  }
+  .points li::before {
+    content: ""; position: absolute; left: 0; top: .58em; width: calc(var(--u) * .9); height: 2px; background: var(--muted);
+  }
+  .points code, .script code, .note code {
+    font-family: var(--mono); font-size: .86em; background: var(--wasm-soft); color: var(--ink); padding: .08em .35em; border-radius: 4px;
+  }
+  .points.row { flex-direction: row; gap: calc(var(--u) * 3); }
+  .points.row li { flex: 1; font-size: calc(var(--u) * 1.45); }
+  @media (max-width: 760px) { .points.row { flex-direction: column; } }
+
+  .script {
+    max-width: 66ch; font-size: calc(var(--u) * 1.6); line-height: 1.62;
+    border-left: 2px solid var(--line); padding-left: calc(var(--u) * 2.4);
+  }
+  .script p { margin: 0 0 .8em; text-wrap: pretty; }
+  .script p:last-child { margin-bottom: 0; }
+  .script .stage-dir { font-family: var(--mono); font-size: .78em; color: var(--wasm); letter-spacing: .03em; }
+
+  .visual { display: flex; flex-direction: column; gap: calc(var(--u) * 1.6); min-width: 0; }
+  .pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: calc(var(--u) * 1.6); align-items: start; }
+  @media (max-width: 760px) { .pair { grid-template-columns: minmax(0, 1fr); } }
+
+  /* code */
+  .code { margin: 0; background: var(--code-bg); border-radius: 10px; overflow: hidden; min-width: 0; }
+  .code figcaption {
+    font-family: var(--mono); font-size: calc(var(--u) * .95); color: var(--code-muted);
+    padding: calc(var(--u) * .9) calc(var(--u) * 1.4) 0; display: flex; gap: .8em; align-items: center;
+  }
+  .tag { font-weight: 600; letter-spacing: .08em; text-transform: uppercase; font-size: .9em; }
+  .tag.n { color: var(--cn); }
+  .tag.w { color: var(--ck); }
+  .code pre {
+    margin: 0; padding: calc(var(--u) * .8) calc(var(--u) * 1.4) calc(var(--u) * 1.2);
+    font-family: var(--mono); font-size: calc(var(--u) * 1.1); line-height: 1.52; color: var(--code-ink);
+    overflow-x: auto; tab-size: 4;
+  }
+  .dense .code pre { font-size: calc(var(--u) * 1); }
+  .mark { background: rgba(195, 166, 255, .16); border-radius: 3px; box-shadow: 0 0 0 .2em rgba(195, 166, 255, .16); }
+  .cb .code pre { font-size: calc(var(--u) * .9); line-height: 1.45; }
+  .cb .body { gap: calc(var(--u) * 2); }
+  .cb .pair, .cb .visual { gap: calc(var(--u) * 1.1); }
+  .cb .points.row li { font-size: calc(var(--u) * 1.35); }
+  .verdicts { display: flex; flex-wrap: wrap; gap: calc(var(--u) * .6); align-items: center; font-size: calc(var(--u) * 1.2); }
+  .verdicts .who { font-family: var(--mono); font-size: .8em; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-right: .3em; }
+  .verdicts .pill { font-size: .88em; padding: .25em .7em; white-space: normal; }
+  .sk { margin-left: auto; font-size: .85em; letter-spacing: .08em; text-transform: uppercase; opacity: .8; }
+  .k { color: var(--ck); } .s { color: var(--cs); } .f { color: var(--cf); } .t { color: var(--ct); }
+  .n { color: var(--cn); } .c { color: var(--code-muted); font-style: italic; }
+  .del { display: block; background: rgba(247, 161, 142, .13); color: #F7B5A6; margin-inline: calc(var(--u) * -1.4); padding-inline: calc(var(--u) * 1.4); }
+  .ln { display: block; }
+  .add { display: block; background: rgba(163, 219, 170, .13); color: #B7E6BD; margin-inline: calc(var(--u) * -1.4); padding-inline: calc(var(--u) * 1.4); }
+
+  .note { font-size: calc(var(--u) * 1.2); color: var(--muted); line-height: 1.45; margin: 0; }
+
+  /* title slide */
+  .title-slide { justify-content: center; gap: calc(var(--u) * 3); }
+  .title-slide h1 { font-size: calc(var(--u) * 6.2); line-height: .98; max-width: 16ch; }
+  .title-slide .sub { font-size: calc(var(--u) * 1.8); color: var(--muted); margin: 0; max-width: 46ch; line-height: 1.4; }
+  .files { display: flex; gap: calc(var(--u) * 1.4); flex-wrap: wrap; align-items: center; font-family: var(--mono); font-size: calc(var(--u) * 1.3); }
+  .file { padding: .45em .8em; border-radius: 7px; border: 1px solid var(--line); }
+  .file.n { color: var(--native); background: var(--native-soft); border-color: transparent; }
+  .file.w { color: var(--wasm); background: var(--wasm-soft); border-color: transparent; }
+  .arrow { color: var(--muted); }
+  .meta { font-family: var(--mono); font-size: calc(var(--u) * 1.05); color: var(--muted); letter-spacing: .06em; }
+
+  /* apk tree */
+  .tree { font-family: var(--mono); font-size: calc(var(--u) * 1.3); line-height: 1.7; margin: 0; padding: calc(var(--u) * 1.8) calc(var(--u) * 2.2); border: 1px solid var(--line); border-radius: 10px; white-space: pre; overflow-x: auto; }
+  .tree .n { color: var(--native); font-style: normal; }
+  .tree .m { color: var(--muted); }
+  .tree .w { color: var(--wasm); }
+
+  /* portability diagram */
+  .port { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: calc(var(--u) * 2); align-items: center; }
+  .col { display: flex; flex-direction: column; gap: calc(var(--u) * .7); }
+  .col h4 { margin: 0 0 calc(var(--u) * .4); font-family: var(--mono); font-size: calc(var(--u) * .95); font-weight: 400; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; }
+  .bin { font-family: var(--mono); font-size: calc(var(--u) * 1.15); padding: .5em .8em; border-radius: 7px; display: flex; justify-content: space-between; gap: 1em; }
+  .bin.n { background: var(--native-soft); color: var(--native); }
+  .bin.w { background: var(--wasm-soft); color: var(--wasm); padding-block: 1.3em; flex-direction: column; gap: .3em; }
+  .bin small { color: var(--muted); font-size: .85em; }
+  .vs { font-family: var(--display); font-stretch: 84%; font-weight: 700; color: var(--muted); font-size: calc(var(--u) * 1.6); }
+
+  table.behave { width: 100%; border-collapse: collapse; font-size: calc(var(--u) * 1.2); }
+  .behave caption { text-align: left; font-family: var(--mono); font-size: calc(var(--u) * .95); color: var(--muted); letter-spacing: .1em; text-transform: uppercase; padding-bottom: calc(var(--u) * .6); }
+  .behave td { padding: .5em .6em; border-top: 1px solid var(--line); vertical-align: top; }
+  .behave td:first-child { font-family: var(--mono); font-size: .92em; white-space: nowrap; padding-left: 0; }
+  .pill { display: inline-block; font-family: var(--mono); font-size: .82em; padding: .12em .55em; border-radius: 99px; white-space: nowrap; }
+  .pill.bad { background: var(--native-soft); color: var(--native); }
+  .pill.good { background: var(--ok-soft); color: var(--ok); }
+  .pill.meh { background: color-mix(in srgb, var(--muted) 16%, transparent); color: var(--muted); }
+  .table-wrap { overflow-x: auto; }
+
+  /* outcomes */
+  .outcomes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: calc(var(--u) * 1.6); }
+  @media (max-width: 760px) { .outcomes { grid-template-columns: minmax(0, 1fr); } }
+  .out { border-radius: 10px; padding: calc(var(--u) * 1.5) calc(var(--u) * 1.7); display: flex; flex-direction: column; gap: calc(var(--u) * .7); }
+  .out.bad { background: var(--native-soft); }
+  .out.good { background: var(--ok-soft); }
+  .out .who { font-family: var(--mono); font-size: calc(var(--u) * .95); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .out .log { font-family: var(--mono); font-size: calc(var(--u) * 1.05); line-height: 1.45; color: var(--ink); overflow-wrap: anywhere; }
+  .out .verdict { font-family: var(--display); font-stretch: 84%; font-weight: 750; font-size: calc(var(--u) * 2.1); line-height: 1.05; }
+  .out.bad .verdict { color: var(--native); }
+  .out.good .verdict { color: var(--ok); }
+
+  /* flow */
+  .flow { list-style: none; margin: 0; padding: 0; counter-reset: step; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: calc(var(--u) * 1); }
+  @media (max-width: 760px) { .flow { grid-template-columns: minmax(0, 1fr); } }
+  .flow li { counter-increment: step; font-size: calc(var(--u) * 1.2); line-height: 1.35; padding: calc(var(--u) * 1) calc(var(--u) * 1.2); border: 1px solid var(--line); border-radius: 8px; display: flex; gap: .6em; }
+  .flow li::before { content: counter(step); font-family: var(--mono); font-size: .85em; color: var(--wasm); font-weight: 600; padding-top: .1em; }
+  .flow li.hl { background: var(--wasm-soft); border-color: transparent; }
+
+  /* pros & cons */
+  .pc { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: calc(var(--u) * 4); }
+  @media (max-width: 760px) { .pc { grid-template-columns: minmax(0, 1fr); } }
+  .pc h3 { margin: 0 0 calc(var(--u) * 1.2); font-family: var(--mono); font-size: calc(var(--u) * 1.05); font-weight: 600; letter-spacing: .14em; text-transform: uppercase; }
+  .pc .pro h3 { color: var(--ok); }
+  .pc .con h3 { color: var(--native); }
+  .pc ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .pc li { font-size: calc(var(--u) * 1.42); line-height: 1.35; padding: calc(var(--u) * .85) 0 calc(var(--u) * .85) calc(var(--u) * 2.2); border-top: 1px solid var(--line); position: relative; text-wrap: pretty; }
+  .pc li::before { position: absolute; left: 0; font-family: var(--mono); font-weight: 600; }
+  .pc .pro li::before { content: "+"; color: var(--ok); }
+  .pc .con li::before { content: "−"; color: var(--native); }
+  .pc li small { display: block; color: var(--muted); font-size: .8em; margin-top: .15em; }
+
+  /* closing */
+  .thesis { font-family: var(--display); font-stretch: 84%; font-weight: 700; font-size: calc(var(--u) * 2.6); line-height: 1.12; margin: 0; max-width: 30ch; text-wrap: balance; }
+  .thesis .dim { color: var(--muted); }
+
+  /* bottom bar */
+  .bottom { display: flex; align-items: center; gap: 14px; padding-block: 10px 14px; }
+  .progress { flex: 1; height: 2px; background: var(--line); border-radius: 2px; overflow: hidden; }
+  .progress i { display: block; height: 100%; background: var(--wasm); width: 0; transition: width .25s ease; }
+  .nav { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .nav button { width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center; font-size: 15px; color: var(--muted); }
+  .nav button:hover:not(:disabled) { color: var(--ink); background: color-mix(in srgb, var(--ink) 7%, transparent); }
+  .nav button:disabled { opacity: .3; cursor: default; }
+  .nav b { color: var(--ink); font-weight: 600; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .balloon { animation: none; }
+    .progress i { transition: none; }
+    .slide.enter { animation: none !important; }
+  }
+  .slide.enter { animation: fade .22s ease-out; }
+  @keyframes fade { from { opacity: .35; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+</style>
+
+<div class="deck">
+  <header class="top">
+    <div class="brand"><b>web-assembly-tests</b> · poc</div>
+    <div class="pickers">
+      <div class="picker">
+        <button class="label" id="langBtn" aria-haspopup="true" aria-expanded="false" aria-label="Language">en</button>
+        <div class="balloon" id="langMenu" role="menu" hidden>
+          <button role="menuitemradio" data-lang="en" aria-checked="true">en</button>
+          <button role="menuitemradio" data-lang="pt" aria-checked="false">pt</button>
+        </div>
+      </div>
+      <div class="picker">
+        <button class="label" id="modeBtn" aria-haspopup="true" aria-expanded="false" aria-label="Mode">demo</button>
+        <div class="balloon" id="modeMenu" role="menu" hidden>
+          <button role="menuitemradio" data-mode="demo" aria-checked="true">demo</button>
+          <button role="menuitemradio" data-mode="study" aria-checked="false">study</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="viewport" id="viewport">
+    <div class="frame">
+      <div class="stage" id="stage">
+
+        <!-- 1 · Title -->
+        <section class="slide title-slide">
+          <div class="eyebrow">
+            <span>C++ · Android · NDK clang · Chicory 1.1</span>
+            <span class="time study-only">≈ 0:30</span>
+          </div>
+          <h1>
+            <span data-l="en">One C++ core, shipped as <em>WebAssembly</em> instead of a <span class="nat">.so</span></span>
+            <span data-l="pt">Um núcleo C++, empacotado como <em>WebAssembly</em> em vez de <span class="nat">.so</span></span>
+          </h1>
+          <p class="sub demo-only">
+            <span data-l="en">A proof of concept on portability, fault containment and hot updates.</span>
+            <span data-l="pt">Uma prova de conceito sobre portabilidade, contenção de falhas e atualização a quente.</span>
+          </p>
+          <div class="files demo-only">
+            <span class="file">calc.cpp</span>
+            <span class="arrow">→</span>
+            <span class="file n">libcalc.so × 4</span>
+            <span class="arrow">vs</span>
+            <span class="file w">calc.wasm × 1</span>
+          </div>
+          <div class="script study-only">
+            <div data-l="en">
+              <p>Today we package our C++ as native <code>.so</code> libraries. In this POC I took one small C++ function and packaged it two ways, from the same source and the same compiler: as a <code>.so</code> called through JNI, and as a WebAssembly module running inside the JVM.</p>
+              <p>I want to show three things in about seven minutes. First, and most important, portability: one binary instead of one per CPU. Second, what happens when the C++ crashes. Third, updating the C++ without shipping a new app. Then the pros and cons, because this is not free.</p>
+            </div>
+            <div data-l="pt">
+              <p>Hoje a gente empacota nosso C++ como bibliotecas nativas <code>.so</code>. Nesta POC eu peguei uma função C++ pequena e empacotei de dois jeitos, a partir do mesmo código e do mesmo compilador: como um <code>.so</code> chamado via JNI, e como um módulo WebAssembly rodando dentro da JVM.</p>
+              <p>Quero mostrar três coisas em uns sete minutos. Primeiro, e mais importante, portabilidade: um binário só, em vez de um por CPU. Segundo, o que acontece quando o C++ quebra. Terceiro, atualizar o C++ sem publicar um app novo. Depois, prós e contras, porque isso não sai de graça.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2 · Today -->
+        <section class="slide" hidden>
+          <div class="eyebrow">
+            <span data-l="en">Where we are</span><span data-l="pt">Onde estamos</span>
+            <span class="time study-only">≈ 0:45</span>
+          </div>
+          <h2>
+            <span data-l="en">How we ship C++ today: <span class="nat">one .so per CPU</span></span>
+            <span data-l="pt">Como entregamos C++ hoje: <span class="nat">um .so por CPU</span></span>
+          </h2>
+          <div class="body split">
+            <ul class="points demo-only">
+              <li><span data-l="en">One binary per ABI, per platform</span><span data-l="pt">Um binário por ABI, por plataforma</span></li>
+              <li><span data-l="en">Each new target brings its own toolchain to build and test</span><span data-l="pt">Cada novo alvo traz seu próprio toolchain para compilar e testar</span></li>
+              <li><span data-l="en">Frozen in the APK: a change needs a new build and a store review</span><span data-l="pt">Congelado no APK: mudar exige build novo e revisão da loja</span></li>
+              <li><span data-l="en">A native fault kills the whole process</span><span data-l="pt">Uma falha nativa derruba o processo inteiro</span></li>
+            </ul>
+            <div class="script study-only">
+              <div data-l="en">
+                <p>This is the native path. The C++ is compiled to machine code, so we need one <code>.so</code> for every CPU architecture we support. On Android that is four ABIs. Add iOS, desktop or a server, and each one brings its own toolchain and its own binary to build, test and keep in sync.</p>
+                <p>That binary is frozen inside the APK. To change one line of C++ we need a new app build and a new store review. And because it is real machine code running inside our process, when it faults, the operating system kills the whole app.</p>
+                <p>Keep these four points in mind. The rest of the talk goes through them one by one.</p>
+              </div>
+              <div data-l="pt">
+                <p>Esse é o caminho nativo. O C++ vira código de máquina, então a gente precisa de um <code>.so</code> para cada arquitetura de CPU que suporta. No Android são quatro ABIs. Some iOS, desktop ou servidor, e cada um traz seu próprio toolchain e seu próprio binário para compilar, testar e manter em sincronia.</p>
+                <p>Esse binário fica congelado dentro do APK. Para mudar uma linha de C++ a gente precisa de um build novo do app e de uma nova revisão da loja. E como é código de máquina de verdade rodando dentro do nosso processo, quando ele falha, o sistema operacional mata o app inteiro.</p>
+                <p>Guardem esses quatro pontos. O resto da apresentação passa por cada um deles.</p>
+              </div>
+            </div>
+            <div class="visual">
+<pre class="tree">app.apk
+└─ lib/
+   ├─ arm64-v8a/<span class="n">libcalc.so</span>
+   ├─ armeabi-v7a/<span class="n">libcalc.so</span>
+   ├─ x86/<span class="n">libcalc.so</span>
+   └─ x86_64/<span class="n">libcalc.so</span>
+<span class="m">+ iOS .a · desktop .dll / .dylib · server .so …</span></pre>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3 · The experiment -->
+        <section class="slide" hidden>
+          <div class="eyebrow">
+            <span data-l="en">The experiment</span><span data-l="pt">O experimento</span>
+            <span class="time study-only">≈ 0:50</span>
+          </div>
+          <h2>
+            <span data-l="en">One source, one compiler, <em>two outputs</em></span>
+            <span data-l="pt">Um código, um compilador, <em>duas saídas</em></span>
+          </h2>
+          <div class="body split">
+            <ul class="points demo-only">
+              <li><span data-l="en">A tiny, pure function: <code>calc_divide</code></span><span data-l="pt">Uma função pequena e pura: <code>calc_divide</code></span></li>
+              <li><span data-l="en">Same file, same NDK clang. It already has a <code>wasm32</code> backend</span><span data-l="pt">Mesmo arquivo, mesmo clang do NDK. Ele já tem backend <code>wasm32</code></span></li>
+              <li><span data-l="en">No emscripten, no wasi-sdk, no libc</span><span data-l="pt">Sem emscripten, sem wasi-sdk, sem libc</span></li>
+              <li><span data-l="en">Frozen contract: <code>double calc_divide(int, int)</code></span><span data-l="pt">Contrato congelado: <code>double calc_divide(int, int)</code></span></li>
+            </ul>
+            <div class="script study-only">
+              <div data-l="en">
+                <p>The experiment is deliberately tiny: one C++ file with one function, <code>calc_divide</code>. The interesting part is the build. Both outputs come from the same file and the same compiler. The Android NDK's clang already ships a <code>wasm32</code> backend, so we didn't install emscripten or wasi-sdk.</p>
+                <p>On the left, CMake builds the <code>.so</code> once for every ABI. On the right, one clang command with <code>--target=wasm32</code> produces a single <code>calc.wasm</code>. No libc, no entry point, so the module needs nothing from the host.</p>
+                <p>We also freeze the contract: <code>double calc_divide(int, int)</code>. The app binds to that signature, and only the body changes between versions. That is what makes the hot update possible later.</p>
+              </div>
+              <div data-l="pt">
+                <p>O experimento é pequeno de propósito: um arquivo C++ com uma função, <code>calc_divide</code>. A parte interessante é o build. As duas saídas vêm do mesmo arquivo e do mesmo compilador. O clang do NDK do Android já vem com backend <code>wasm32</code>, então não instalamos emscripten nem wasi-sdk.</p>
+                <p>À esquerda, o CMake gera o <code>.so</code> uma vez para cada ABI. À direita, um único comando clang com <code>--target=wasm32</code> gera um único <code>calc.wasm</code>. Sem libc, sem entry point, então o módulo não precisa de nada do host.</p>
+                <p>A gente também congela o contrato: <code>double calc_divide(int, int)</code>. O app se liga a essa assinatura, e só o corpo muda entre versões. É isso que torna possível a atualização a quente mais adiante.</p>
+              </div>
+            </div>
+            <div class="visual">
+              <figure class="code">
+                <figcaption>cpp/calc.cpp</figcaption>
+<pre><span class="k">extern</span> <span class="s">"C"</span> <span class="t">double</span> <span class="f">calc_divide</span>(<span class="t">int</span> a, <span class="t">int</span> b) {
+    <span class="k">if</span> (b == <span class="n">0</span>) {
+        <span class="f">__builtin_trap</span>();   <span class="c">// native: SIGILL | wasm: trap</span>
+    }
+    <span class="k">return</span> (<span class="t">double</span>)(a / b);
+}</pre>
+              </figure>
+              <div class="pair">
+                <figure class="code">
+                  <figcaption><span class="tag n">.so</span> jni/CMakeLists.txt</figcaption>
+<pre><span class="f">add_library</span>(calc SHARED
+    calc_jni.cpp
+    ../cpp/calc.cpp)
+
+<span class="c"># → lib/&lt;abi&gt;/libcalc.so  × 4</span></pre>
+                </figure>
+                <figure class="code">
+                  <figcaption><span class="tag w">.wasm</span> buildWasm task</figcaption>
+<pre>clang <span class="k">--target=wasm32</span> -nostdlib -O2 \
+  -Wl,--no-entry -Wl,--export-all \
+  -o calc.wasm cpp/calc.cpp
+
+<span class="c"># → assets/calc.wasm  × 1</span></pre>
+                </figure>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 4 · Portability -->
+        <section class="slide" hidden>
+          <div class="eyebrow">
+            <span data-l="en">The main point</span><span data-l="pt">O ponto principal</span>
+            <span class="time study-only">≈ 1:10</span>
+          </div>
+          <h2>
+            <span data-l="en">Portability: <em>one binary</em>, the same behavior on every CPU</span>
+            <span data-l="pt">Portabilidade: <em>um binário</em>, o mesmo comportamento em qualquer CPU</span>
+          </h2>
+          <div class="body split">
+            <ul class="points demo-only">
+              <li><span data-l="en">Wasm is bytecode: the runtime deals with the CPU, not us</span><span data-l="pt">Wasm é bytecode: o runtime cuida da CPU, não a gente</span></li>
+              <li><span data-l="en">Chicory is pure Java: no native code on this path at all</span><span data-l="pt">Chicory é Java puro: nenhum código nativo nesse caminho</span></li>
+              <li><span data-l="en">Edge cases are defined by the spec, not by the hardware</span><span data-l="pt">Casos de borda são definidos pela spec, não pelo hardware</span></li>
+              <li><span data-l="en">Same file could serve backend or iOS with another runtime (untested)</span><span data-l="pt">O mesmo arquivo poderia servir backend ou iOS com outro runtime (não testado)</span></li>
+            </ul>
+            <div class="script study-only">
+              <div data-l="en">
+                <p>This is the main point. A <code>.wasm</code> file is not machine code, it is portable bytecode, and the runtime takes care of the CPU. Here the runtime is Chicory, which is written in pure Java, so there is no native code anywhere on the wasm path. One file serves arm64, x86 and whatever comes next.</p>
+                <p>It is not only about the file, it is about behavior. Look at the table. Integer division by zero in native C++ is undefined, and the hardware disagrees: on ARM64 it silently returns zero, on x86 it raises a signal and the process dies. In WebAssembly the spec defines it: it traps, on every host, the same way.</p>
+                <p>That is why the POC uses <code>__builtin_trap</code>: it was the only way to make the native side fail the same way on every phone. With wasm we get that consistency for free. In principle the same <code>calc.wasm</code> could also run on our backend, or on iOS with a different runtime. I haven't tested that part yet.</p>
+              </div>
+              <div data-l="pt">
+                <p>Esse é o ponto principal. Um arquivo <code>.wasm</code> não é código de máquina, é bytecode portável, e quem cuida da CPU é o runtime. Aqui o runtime é o Chicory, escrito em Java puro, então não existe código nativo em nenhum ponto do caminho wasm. Um arquivo só atende arm64, x86 e o que vier depois.</p>
+                <p>E não é só o arquivo, é o comportamento. Olhem a tabela. Divisão inteira por zero em C++ nativo é comportamento indefinido, e o hardware discorda: no ARM64 ela retorna zero em silêncio, no x86 ela dispara um sinal e o processo morre. No WebAssembly a spec define: dá trap, em qualquer host, do mesmo jeito.</p>
+                <p>Por isso a POC usa <code>__builtin_trap</code>: foi o único jeito de fazer o lado nativo falhar igual em todo celular. Com wasm essa consistência vem de graça. Em princípio, o mesmo <code>calc.wasm</code> também poderia rodar no nosso backend, ou no iOS com outro runtime. Essa parte eu ainda não testei.</p>
+              </div>
+            </div>
+            <div class="visual">
+              <div class="port">
+                <div class="col">
+                  <h4>JNI</h4>
+                  <div class="bin n"><span>libcalc.so</span><small>arm64-v8a</small></div>
+                  <div class="bin n"><span>libcalc.so</span><small>armeabi-v7a</small></div>
+                  <div class="bin n"><span>libcalc.so</span><small>x86</small></div>
+                  <div class="bin n"><span>libcalc.so</span><small>x86_64</small></div>
+                </div>
+                <div class="vs">vs</div>
+                <div class="col">
+                  <h4>WebAssembly</h4>
+                  <div class="bin w">
+                    <span>calc.wasm</span>
+                    <small><span data-l="en">any CPU the JVM runs on</span><span data-l="pt">qualquer CPU onde a JVM roda</span></small>
+                  </div>
+                </div>
+              </div>
+              <div class="table-wrap">
+                <table class="behave">
+                  <caption><span data-l="en">Integer <code>a / 0</code>, same C++</span><span data-l="pt">Inteiro <code>a / 0</code>, mesmo C++</span></caption>
+                  <tbody>
+                    <tr><td>native · ARM64</td><td><span class="pill meh"><span data-l="en">returns 0, no error</span><span data-l="pt">retorna 0, sem erro</span></span></td></tr>
+                    <tr><td>native · x86</td><td><span class="pill bad">SIGFPE · <span data-l="en">crash</span><span data-l="pt">crash</span></span></td></tr>
+                    <tr><td>wasm · <span data-l="en">any host</span><span data-l="pt">qualquer host</span></td><td><span class="pill good"><span data-l="en">trap, identical everywhere</span><span data-l="pt">trap, idêntico em todo lugar</span></span></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5 · Kotlin side -->
+        <section class="slide dense" hidden>
+          <div class="eyebrow">
+            <span data-l="en">Calling it</span><span data-l="pt">Chamando</span>
+            <span class="time study-only">≈ 0:45</span>
+          </div>
+          <h2>
+            <span data-l="en">From Kotlin, both look like a plain object</span>
+            <span data-l="pt">No Kotlin, os dois parecem um objeto comum</span>
+          </h2>
+          <div class="body">
+            <div class="script study-only">
+              <div data-l="en">
+                <p>From the app's point of view both transports look alike. On the left, JNI: <code>System.loadLibrary</code>, an <code>external</code> function, and a C++ wrapper whose name has to match the Kotlin package exactly.</p>
+                <p>On the right, wasm. <code>init</code> reads <code>calc.wasm</code> from the APK assets as a plain byte array, and <code>load</code> parses those bytes, builds an instance and looks up the export by name. One detail: Chicory returns values as raw 64-bit words, so we convert the bits back to a double.</p>
+                <p>Both sit behind a small Kotlin object, and the UI just calls <code>divide</code>. Notice that the wasm side takes bytes. Where those bytes come from is up to us: the APK assets today, a download tomorrow.</p>
+              </div>
+              <div data-l="pt">
+                <p>Do ponto de vista do app, os dois transportes são parecidos. À esquerda, JNI: <code>System.loadLibrary</code>, uma função <code>external</code> e um wrapper C++ cujo nome precisa bater exatamente com o pacote Kotlin.</p>
+                <p>À direita, wasm. O <code>init</code> lê o <code>calc.wasm</code> dos assets do APK como um array de bytes comum, e o <code>load</code> faz o parse desses bytes, cria uma instância e busca o export pelo nome. Um detalhe: o Chicory devolve os valores como palavras cruas de 64 bits, então a gente converte os bits de volta para double.</p>
+                <p>Os dois ficam atrás de um objeto Kotlin pequeno, e a UI só chama <code>divide</code>. Reparem que o lado wasm recebe bytes. De onde esses bytes vêm é escolha nossa: dos assets do APK hoje, de um download amanhã.</p>
+              </div>
+            </div>
+            <div class="visual">
+              <div class="pair">
+                <div class="visual">
+                  <figure class="code">
+                    <figcaption><span class="tag n">JNI</span> NativeCalc.kt</figcaption>
+<pre><span class="k">object</span> <span class="t">NativeCalc</span> {
+    <span class="c">// lib/&lt;abi&gt;/libcalc.so, picked by the OS for this CPU</span>
+    <span class="k">init</span> { System.<span class="f">loadLibrary</span>(<span class="s">"calc"</span>) }
+
+    <span class="k">external fun</span> <span class="f">divide</span>(a: <span class="t">Int</span>, b: <span class="t">Int</span>): <span class="t">Double</span>
+}</pre>
+                  </figure>
+                  <figure class="code">
+                    <figcaption><span class="tag n">JNI</span> calc_jni.cpp</figcaption>
+<pre><span class="k">extern</span> <span class="s">"C"</span> JNIEXPORT jdouble JNICALL
+<span class="f">Java_com_jniso_NativeCalc_divide</span>(
+        JNIEnv*, jobject, jint a, jint b) {
+    <span class="k">return</span> <span class="f">calc_divide</span>(a, b);
+}</pre>
+                  </figure>
+                </div>
+                <figure class="code">
+                  <figcaption><span class="tag w">wasm</span> WasmCalc.kt</figcaption>
+<pre><span class="k">object</span> <span class="t">WasmCalc</span> {
+    <span class="k">private var</span> divideFn: <span class="t">ExportFunction</span>? = <span class="k">null</span>
+    <span class="k">fun</span> <span class="f">init</span>(context: <span class="t">Context</span>) {
+        <span class="mark"><span class="k">val</span> bytes = context.assets.<span class="f">open</span>(<span class="s">"calc.wasm"</span>)</span>
+            .<span class="f">use</span> { it.<span class="f">readBytes</span>() }   <span class="c">// bundled in the APK</span>
+        <span class="f">load</span>(bytes)
+    }
+    <span class="k">private fun</span> <span class="f">load</span>(bytes: <span class="t">ByteArray</span>) {
+        <span class="k">val</span> module = Parser.<span class="f">parse</span>(bytes)
+        divideFn = Instance.<span class="f">builder</span>(module).<span class="f">build</span>()
+            .<span class="f">export</span>(<span class="s">"calc_divide"</span>)
+    }
+    <span class="k">fun</span> <span class="f">divide</span>(a: <span class="t">Int</span>, b: <span class="t">Int</span>): <span class="t">Double</span> {
+        <span class="k">val</span> fn = divideFn ?: <span class="f">error</span>(<span class="s">"init() first"</span>)
+        <span class="k">val</span> bits = fn.<span class="f">apply</span>(a.<span class="f">toLong</span>(), b.<span class="f">toLong</span>())[<span class="n">0</span>]
+        <span class="k">return</span> java.lang.Double.<span class="f">longBitsToDouble</span>(bits)
+    }
+}</pre>
+                </figure>
+              </div>
+            </div>
+            <ul class="points row demo-only">
+              <li><span data-l="en">JNI: symbol name tied to the Kotlin package</span><span data-l="pt">JNI: nome do símbolo preso ao pacote Kotlin</span></li>
+              <li><span data-l="en">Wasm: bytes from <code>assets/</code> in, export by name out</span><span data-l="pt">Wasm: entram bytes de <code>assets/</code>, sai um export pelo nome</span></li>
+              <li><span data-l="en">The UI doesn't know which one it calls</span><span data-l="pt">A UI não sabe qual dos dois está chamando</span></li>
+            </ul>
+          </div>
+        </section>
+
+        <!-- 5b · Calling back into Android -->
+        <section class="slide dense cb" hidden>
+          <div class="eyebrow">
+            <span data-l="en">Calling back</span><span data-l="pt">Chamando de volta</span>
+            <span class="time study-only">≈ 0:55</span>
+          </div>
+          <h2>
+            <span data-l="en">Both can call Android. <span class="nat">Only the .so can do it on its own.</span></span>
+            <span data-l="pt">Os dois chamam o Android. <span class="nat">Só o .so faz isso por conta própria.</span></span>
+          </h2>
+          <div class="body">
+            <div class="script study-only">
+              <div data-l="en">
+                <p>A question that always comes up: can the C++ call back into Android? Yes, in both cases, but in different ways. The callback here is a plain Android toast, so you can see it is really native Android code running.</p>
+                <p>With JNI, the C++ gets a <code>JNIEnv</code>, looks up a Kotlin method by name and signature, and calls it. It can do that at any moment: it can start its own thread and call Android whenever it wants.</p>
+                <p>With wasm, the module declares an import, <code>android.toast</code>, and we hand it the implementation when we instantiate it. A string can't cross directly, so the C++ passes a pointer and a length, and Kotlin reads the text from the module's memory.</p>
+                <p>Two differences matter. The module can only call what we import, nothing else. And it can only call us while we are calling it, because it has no threads or timers of its own. If we need events, Kotlin calls a <code>tick</code> export and the C++ answers there.</p>
+              </div>
+              <div data-l="pt">
+                <p>Uma pergunta que sempre aparece: o C++ consegue chamar o Android de volta? Sim, nos dois casos, mas de jeitos diferentes. O callback aqui é um toast comum do Android, para ficar claro que é código Android nativo rodando.</p>
+                <p>Com JNI, o C++ recebe um <code>JNIEnv</code>, procura um método Kotlin pelo nome e pela assinatura, e chama. Ele pode fazer isso a qualquer momento: pode criar a própria thread e chamar o Android quando quiser.</p>
+                <p>Com wasm, o módulo declara um import, <code>android.toast</code>, e a gente entrega a implementação na hora de instanciar. Uma string não atravessa direto, então o C++ passa um ponteiro e um tamanho, e o Kotlin lê o texto da memória do módulo.</p>
+                <p>Duas diferenças importam. O módulo só consegue chamar o que a gente importou, mais nada. E ele só chama a gente enquanto a gente está chamando ele, porque não tem threads nem timers próprios. Se precisarmos de eventos, o Kotlin chama um export <code>tick</code> e o C++ responde ali.</p>
+              </div>
+            </div>
+            <div class="pair">
+              <div class="visual">
+                <div class="verdicts">
+                  <span class="who">JNI · .so</span>
+                  <span class="pill good">✓ callback</span>
+                  <span class="pill good">✓ <span data-l="en">on its own: own threads, any time</span><span data-l="pt">por conta própria: threads próprias, a qualquer hora</span></span>
+                </div>
+                <figure class="code">
+                  <figcaption><span class="tag n">JNI</span> calc_jni.cpp <span class="sk">sketch</span></figcaption>
+<pre><span class="k">extern</span> <span class="s">"C"</span> JNIEXPORT <span class="t">void</span> JNICALL
+<span class="f">Java_com_jniso_NativeCalc_greet</span>(
+        JNIEnv* env, jobject thiz) {
+    jclass cls = env-&gt;<span class="f">GetObjectClass</span>(thiz);
+    jmethodID m = env-&gt;<span class="f">GetMethodID</span>(cls, <span class="s">"showToast"</span>,
+                                   <span class="s">"(Ljava/lang/String;)V"</span>);
+    env-&gt;<span class="f">CallVoidMethod</span>(thiz, m, env-&gt;<span class="f">NewStringUTF</span>(<span class="s">"Hi from C++"</span>));
+}
+<span class="c">// ...or proactively, whenever the C++ decides:</span>
+<span class="mark">std::<span class="t">thread</span>([] { <span class="c">/* AttachCurrentThread → CallVoidMethod */</span> }).<span class="f">detach</span>();</span></pre>
+                </figure>
+                <figure class="code">
+                  <figcaption><span class="tag n">JNI</span> NativeCalc.kt</figcaption>
+<pre><span class="k">object</span> <span class="t">NativeCalc</span> {
+    <span class="k">var</span> toast: (<span class="t">String</span>) -&gt; <span class="t">Unit</span> = {}
+    <span class="k">fun</span> <span class="f">showToast</span>(msg: <span class="t">String</span>) = <span class="f">toast</span>(msg)  <span class="c">// called by C++</span>
+    <span class="k">external fun</span> <span class="f">greet</span>()
+}
+<span class="c">// MainActivity</span>
+NativeCalc.toast = { Toast.<span class="f">makeText</span>(<span class="k">this</span>, it, LENGTH_SHORT).<span class="f">show</span>() }</pre>
+                </figure>
+              </div>
+              <div class="visual">
+                <div class="verdicts">
+                  <span class="who">WebAssembly</span>
+                  <span class="pill good">✓ callback</span>
+                  <span class="pill bad">✗ <span data-l="en">on its own: only inside a call from Kotlin</span><span data-l="pt">por conta própria: só dentro de uma chamada do Kotlin</span></span>
+                </div>
+                <figure class="code">
+                  <figcaption><span class="tag w">wasm</span> calc.cpp <span class="sk">sketch</span></figcaption>
+<pre><span class="k">__attribute__</span>((<span class="f">import_module</span>(<span class="s">"android"</span>), <span class="f">import_name</span>(<span class="s">"toast"</span>)))
+<span class="k">extern</span> <span class="s">"C"</span> <span class="t">void</span> <span class="f">android_toast</span>(<span class="k">const</span> <span class="t">char</span>* msg, <span class="t">int</span> len);
+<span class="mark"><span class="c">// no threads, no timers: this runs only while Kotlin calls greet()</span></span>
+<span class="k">extern</span> <span class="s">"C"</span> <span class="t">void</span> <span class="f">greet</span>() {
+    <span class="k">static const</span> <span class="t">char</span> msg[] = <span class="s">"Hi from C++"</span>;
+    <span class="mark"><span class="f">android_toast</span>(msg, <span class="k">sizeof</span>(msg) - <span class="n">1</span>);</span>   <span class="c">// pointer + length</span>
+}</pre>
+                </figure>
+                <figure class="code">
+                  <figcaption><span class="tag w">wasm</span> WasmCalc.kt</figcaption>
+<pre><span class="k">val</span> toast = <span class="t">HostFunction</span>(<span class="s">"android"</span>, <span class="s">"toast"</span>,
+    FunctionType.<span class="f">of</span>(<span class="f">listOf</span>(ValType.I32, ValType.I32), <span class="f">listOf</span>())
+) { inst, args -&gt;
+    <span class="k">val</span> msg = inst.<span class="f">memory</span>().<span class="f">readString</span>(args[<span class="n">0</span>].<span class="f">toInt</span>(), args[<span class="n">1</span>].<span class="f">toInt</span>())
+    Toast.<span class="f">makeText</span>(ctx, msg, LENGTH_SHORT).<span class="f">show</span>()
+    <span class="k">null</span>
+}
+Instance.<span class="f">builder</span>(module)
+    .<span class="f">withImportValues</span>(ImportValues.<span class="f">builder</span>().<span class="f">addFunction</span>(toast).<span class="f">build</span>())
+    .<span class="f">build</span>()</pre>
+                </figure>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 6 · Resilience -->
+        <section class="slide" hidden>
+          <div class="eyebrow">
+            <span data-l="en">Fault containment</span><span data-l="pt">Contenção de falhas</span>
+            <span class="cue">▶ <span data-l="en">live demo · act 1</span><span data-l="pt">demo ao vivo · ato 1</span></span>
+            <span class="time study-only">≈ 1:00</span>
+          </div>
+          <h2>
+            <span data-l="en">Same input, same C++, same try/catch. <span class="nat">One app dies.</span></span>
+            <span data-l="pt">Mesma entrada, mesmo C++, mesmo try/catch. <span class="nat">Um app morre.</span></span>
+          </h2>
+          <div class="body split-even">
+            <ul class="points demo-only">
+              <li><span data-l="en"><code>10 / 0</code> on both engines</span><span data-l="pt"><code>10 / 0</code> nos dois motores</span></li>
+              <li><span data-l="en">JNI: <code>SIGILL</code> inside <code>libcalc.so</code>, the catch never runs</span><span data-l="pt">JNI: <code>SIGILL</code> dentro do <code>libcalc.so</code>, o catch nunca roda</span></li>
+              <li><span data-l="en">Wasm: the trap becomes a <code>RuntimeException</code></span><span data-l="pt">Wasm: o trap vira uma <code>RuntimeException</code></span></li>
+              <li><span data-l="en">Sandbox: the module only sees its own memory</span><span data-l="pt">Sandbox: o módulo só enxerga a própria memória</span></li>
+            </ul>
+            <div class="script study-only">
+              <div data-l="en">
+                <p class="stage-dir">[ demo · 10 / 0 on WebAssembly, then on JNI ]</p>
+                <p>Now the demo. Same input, ten divided by zero, and the exact same try/catch around both calls. First WebAssembly: the result shows "erro", a toast shows the trap message, and the app keeps running.</p>
+                <p>Now JNI: the process dies. Logcat shows fatal signal 4, SIGILL, inside <code>libcalc.so</code>. The try/catch never had a chance, because the signal kills the process before any Kotlin code runs.</p>
+                <p>With wasm the fault stays inside the sandbox. The module can only read and write its own linear memory, so a bug in the C++ can't corrupt the rest of the app. For us, that means one bad input doesn't crash the app in the user's hands.</p>
+              </div>
+              <div data-l="pt">
+                <p class="stage-dir">[ demo · 10 / 0 no WebAssembly, depois no JNI ]</p>
+                <p>Agora a demo. Mesma entrada, dez dividido por zero, e exatamente o mesmo try/catch em volta das duas chamadas. Primeiro WebAssembly: o resultado mostra "erro", um toast mostra a mensagem do trap, e o app continua rodando.</p>
+                <p>Agora JNI: o processo morre. O logcat mostra fatal signal 4, SIGILL, dentro do <code>libcalc.so</code>. O try/catch nem teve chance, porque o sinal mata o processo antes de qualquer código Kotlin rodar.</p>
+                <p>Com wasm a falha fica dentro da sandbox. O módulo só consegue ler e escrever na própria memória linear, então um bug no C++ não corrompe o resto do app. Para a gente, isso significa que uma entrada ruim não derruba o app na mão do usuário.</p>
+              </div>
+            </div>
+            <div class="visual">
+              <figure class="code">
+                <figcaption>MainActivity.kt</figcaption>
+<pre><span class="k">try</span> {
+    <span class="k">val</span> value = engine.<span class="f">divide</span>(<span class="n">10</span>, <span class="n">0</span>)  <span class="c">// NativeCalc | WasmCalc</span>
+    result.text = <span class="f">format</span>(value)
+} <span class="k">catch</span> (e: <span class="t">RuntimeException</span>) {
+    result.text = <span class="s">"erro"</span>
+}</pre>
+              </figure>
+              <div class="outcomes">
+                <div class="out bad">
+                  <span class="who">JNI · .so</span>
+                  <span class="log">Fatal signal 4 (SIGILL)<br>in libcalc.so</span>
+                  <span class="verdict"><span data-l="en">Process dead</span><span data-l="pt">Processo morto</span></span>
+                </div>
+                <div class="out good">
+                  <span class="who">WebAssembly</span>
+                  <span class="log">TrapException: Trapped on unreachable instruction</span>
+                  <span class="verdict"><span data-l="en">Caught, app alive</span><span data-l="pt">Capturado, app vivo</span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 7 · Hot update -->
+        <section class="slide" hidden>
+          <div class="eyebrow">
+            <span data-l="en">Hot update</span><span data-l="pt">Atualização a quente</span>
+            <span class="cue">▶ <span data-l="en">live demo · act 2</span><span data-l="pt">demo ao vivo · ato 2</span></span>
+            <span class="time study-only">≈ 1:00</span>
+          </div>
+          <h2>
+            <span data-l="en">Changing the C++ <em>without a new app</em></span>
+            <span data-l="pt">Mudando o C++ <em>sem app novo</em></span>
+          </h2>
+          <div class="body split-even">
+            <ul class="points demo-only">
+              <li><span data-l="en">The contract stays frozen, only the body changes</span><span data-l="pt">O contrato fica congelado, só o corpo muda</span></li>
+              <li><span data-l="en">Every push: CI builds <code>calc.wasm</code> and publishes a release</span><span data-l="pt">Todo push: o CI gera o <code>calc.wasm</code> e publica uma release</span></li>
+              <li><span data-l="en">The running app downloads and re-instantiates it, no restart</span><span data-l="pt">O app, rodando, baixa e reinstancia, sem reiniciar</span></li>
+              <li><span data-l="en">JNI stays at v0.1 until the next store release</span><span data-l="pt">O JNI fica na v0.1 até a próxima release na loja</span></li>
+            </ul>
+            <div class="script study-only">
+              <div data-l="en">
+                <p class="stage-dir">[ demo · app open at v0.1 · 10 / 4 on WebAssembly = 2 ]</p>
+                <p>Second demo. The app is open at version 0.1, and ten divided by four on wasm gives two, because it is integer division. I apply a one-line change: cast before dividing. I bump the version to 0.2 and push to master. GitHub Actions compiles <code>calc.wasm</code> and publishes a release.</p>
+                <p>Back in the app, which I did not restart, I press Submit on WebAssembly. It sees 0.2 and asks if I want to update. I say yes, it downloads the module, re-instantiates it, and now the result is 2.5.</p>
+                <p>Then I switch to JNI: still two, still 0.1. The native side can't change without a new build and a store review. In a real rollout the downloaded bytes would be signed and verified. That is not in the POC yet.</p>
+              </div>
+              <div data-l="pt">
+                <p class="stage-dir">[ demo · app aberto na v0.1 · 10 / 4 no WebAssembly = 2 ]</p>
+                <p>Segunda demo. O app está aberto na versão 0.1, e dez dividido por quatro no wasm dá dois, porque é divisão inteira. Eu aplico uma mudança de uma linha: converter antes de dividir. Subo a versão para 0.2 e dou push na master. O GitHub Actions compila o <code>calc.wasm</code> e publica uma release.</p>
+                <p>De volta ao app, que eu não reiniciei, aperto Submit no WebAssembly. Ele vê a 0.2 e pergunta se quero atualizar. Digo que sim, ele baixa o módulo, reinstancia, e agora o resultado é 2.5.</p>
+                <p>Aí eu troco para JNI: continua dois, continua 0.1. O lado nativo não muda sem um build novo e uma revisão da loja. Num rollout de verdade, os bytes baixados seriam assinados e verificados. Isso ainda não está na POC.</p>
+              </div>
+            </div>
+            <div class="visual">
+              <figure class="code">
+                <figcaption>demo/v0.2-float.patch</figcaption>
+<pre><span class="ln c">// cpp/calc.cpp</span><span class="del">-  return (double)(a / b);          // 10 / 4 = 2</span><span class="add">+  return (double)a / (double)b;    // 10 / 4 = 2.5</span><span class="ln c">// webassembly/VERSION</span><span class="del">-  0.1</span><span class="add">+  0.2</span></pre>
+              </figure>
+              <ol class="flow">
+                <li><span data-l="en">Push to master</span><span data-l="pt">Push na master</span></li>
+                <li><span data-l="en">CI: clang → calc.wasm</span><span data-l="pt">CI: clang → calc.wasm</span></li>
+                <li><span data-l="en">GitHub release v0.2</span><span data-l="pt">Release v0.2 no GitHub</span></li>
+                <li><span data-l="en">App checks releases/latest</span><span data-l="pt">App consulta releases/latest</span></li>
+                <li><span data-l="en">Download + <code>WasmCalc.update()</code></span><span data-l="pt">Download + <code>WasmCalc.update()</code></span></li>
+                <li class="hl"><span data-l="en">10 / 4 = 2.5, no restart</span><span data-l="pt">10 / 4 = 2.5, sem reiniciar</span></li>
+              </ol>
+            </div>
+          </div>
+        </section>
+
+        <!-- 8 · Pros & cons -->
+        <section class="slide" hidden>
+          <div class="eyebrow">
+            <span data-l="en">Trade-offs</span><span data-l="pt">Trade-offs</span>
+            <span class="time study-only">≈ 0:55</span>
+          </div>
+          <h2>
+            <span data-l="en">Pros and cons</span>
+            <span data-l="pt">Prós e contras</span>
+          </h2>
+          <div class="body">
+            <div class="script study-only">
+              <div data-l="en">
+                <p>So, pros and cons. On the plus side: one binary for every CPU, the same behavior on every host, crashes that stay contained, a sandbox that only sees what we hand it, updates without a store release, and we didn't even need a new toolchain.</p>
+                <p>On the other side, it is not free. Chicory interprets by default, so it is slower than native. It also has a compiler to JVM bytecode, but we still need to measure how that behaves on Android. The module has no direct access to the OS; this one has no libc at all. Passing anything more complex than numbers means copying data through the module's memory.</p>
+                <p>It is one more dependency in the app, and the debugging tools are behind the native ones. And downloading code means we need signing, plus a check against the Google Play and App Store rules.</p>
+              </div>
+              <div data-l="pt">
+                <p>Então, prós e contras. Do lado bom: um binário para qualquer CPU, o mesmo comportamento em qualquer host, crashes que ficam contidos, uma sandbox que só enxerga o que a gente entrega, atualização sem release na loja, e nem precisamos de um toolchain novo.</p>
+                <p>Do outro lado, não sai de graça. O Chicory interpreta por padrão, então é mais lento que nativo. Ele também tem um compilador para bytecode JVM, mas ainda precisamos medir como isso se comporta no Android. O módulo não tem acesso direto ao sistema; este aqui nem libc tem. Passar qualquer coisa mais complexa que números significa copiar dados pela memória do módulo.</p>
+                <p>É mais uma dependência no app, e as ferramentas de debug estão atrás das nativas. E baixar código significa que precisamos de assinatura, além de checar as regras do Google Play e da App Store.</p>
+              </div>
+            </div>
+            <div class="pc">
+              <div class="pro">
+                <h3><span data-l="en">Pros</span><span data-l="pt">Prós</span></h3>
+                <ul>
+                  <li><span data-l="en">One binary for every CPU and OS with a runtime</span><span data-l="pt">Um binário para toda CPU e SO que tenha runtime</span></li>
+                  <li><span data-l="en">Deterministic behavior across hosts</span><span data-l="pt">Comportamento determinístico entre hosts</span></li>
+                  <li><span data-l="en">Faults are contained, the app survives</span><span data-l="pt">Falhas ficam contidas, o app sobrevive</span></li>
+                  <li><span data-l="en">Sandboxed: its own memory and the imports we grant</span><span data-l="pt">Sandbox: só a própria memória e os imports que liberamos</span></li>
+                  <li><span data-l="en">Logic ships without a store release</span><span data-l="pt">Lógica atualiza sem release na loja</span></li>
+                  <li><span data-l="en">Same NDK clang, no new toolchain</span><span data-l="pt">Mesmo clang do NDK, sem toolchain novo</span></li>
+                </ul>
+              </div>
+              <div class="con">
+                <h3><span data-l="en">Cons</span><span data-l="pt">Contras</span></h3>
+                <ul>
+                  <li><span data-l="en">Slower: Chicory interprets by default</span><span data-l="pt">Mais lento: o Chicory interpreta por padrão</span>
+                    <small><span data-l="en">compiler mode still to be measured on Android</span><span data-l="pt">modo compilado ainda a medir no Android</span></small></li>
+                  <li><span data-l="en">No direct OS access: no libc, everything via imports</span><span data-l="pt">Sem acesso direto ao SO: sem libc, tudo via imports</span></li>
+                  <li><span data-l="en">Only numbers cross the boundary for free</span><span data-l="pt">Só números cruzam a fronteira de graça</span>
+                    <small><span data-l="en">strings and structs go through linear memory</span><span data-l="pt">strings e structs passam pela memória linear</span></small></li>
+                  <li><span data-l="en">One more runtime dependency in the app</span><span data-l="pt">Mais uma dependência de runtime no app</span></li>
+                  <li><span data-l="en">Less mature debugging and profiling</span><span data-l="pt">Debug e profiling menos maduros</span></li>
+                  <li><span data-l="en">Downloaded code needs signing and a store policy check</span><span data-l="pt">Código baixado exige assinatura e checagem de política das lojas</span></li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 9 · Where it fits -->
+        <section class="slide" hidden>
+          <div class="eyebrow">
+            <span data-l="en">Where it fits</span><span data-l="pt">Onde se encaixa</span>
+            <span class="time study-only">≈ 0:40</span>
+          </div>
+          <h2>
+            <span data-l="en">Not every .so, but <em>self-contained logic</em></span>
+            <span data-l="pt">Não todo .so, mas <em>lógica autocontida</em></span>
+          </h2>
+          <div class="body split-even">
+            <div class="demo-only visual">
+              <p class="thesis">
+                <span data-l="en">Pure C++ logic goes to wasm. <span class="dim">Code that talks to the OS or needs every cycle stays native.</span></span>
+                <span data-l="pt">Lógica C++ pura vai para wasm. <span class="dim">Código que fala com o SO ou precisa de cada ciclo continua nativo.</span></span>
+              </p>
+            </div>
+            <div class="script study-only">
+              <div data-l="en">
+                <p>To close: I'm not proposing to replace every <code>.so</code>. Code that talks to the OS, or needs every cycle of the CPU, should stay native. But self-contained logic, like rules, calculations and validation, is a good fit. We build it once, it runs the same everywhere, it can't take the app down, and we can fix it without a release.</p>
+                <p>The next steps are to measure performance on a real module, try passing strings and buffers, add signing to the update flow, check the store policies, and run the same <code>.wasm</code> on iOS and on the backend. Thanks. Questions?</p>
+              </div>
+              <div data-l="pt">
+                <p>Para fechar: não estou propondo trocar todo <code>.so</code>. Código que fala com o sistema operacional, ou que precisa de cada ciclo da CPU, deve continuar nativo. Mas lógica autocontida, como regras, cálculos e validação, se encaixa bem. A gente compila uma vez, roda igual em todo lugar, não derruba o app, e dá para corrigir sem release.</p>
+                <p>Os próximos passos são medir performance num módulo real, testar passagem de strings e buffers, colocar assinatura no fluxo de atualização, checar as políticas das lojas, e rodar o mesmo <code>.wasm</code> no iOS e no backend. Obrigado. Perguntas?</p>
+              </div>
+            </div>
+            <div class="visual">
+              <ul class="points">
+                <li><span data-l="en">Benchmark a real module: interpreter vs compiler vs <code>.so</code></span><span data-l="pt">Benchmark de um módulo real: interpretador vs compilador vs <code>.so</code></span></li>
+                <li><span data-l="en">Pass strings and buffers across the boundary</span><span data-l="pt">Passar strings e buffers pela fronteira</span></li>
+                <li><span data-l="en">Sign and verify downloaded modules</span><span data-l="pt">Assinar e verificar módulos baixados</span></li>
+                <li><span data-l="en">Validate Google Play and App Store policies</span><span data-l="pt">Validar políticas do Google Play e da App Store</span></li>
+                <li><span data-l="en">Run the same <code>.wasm</code> on iOS and on the backend</span><span data-l="pt">Rodar o mesmo <code>.wasm</code> no iOS e no backend</span></li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </main>
+
+  <footer class="bottom">
+    <div class="progress" aria-hidden="true"><i id="bar"></i></div>
+    <div class="nav">
+      <button id="prev" aria-label="Previous slide">‹</button>
+      <span><b id="cur">01</b> / <span id="tot">09</span></span>
+      <button id="next" aria-label="Next slide">›</button>
+    </div>
+  </footer>
+</div>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var viewport = document.getElementById('viewport');
+  var cur = document.getElementById('cur');
+  var bar = document.getElementById('bar');
+  var prev = document.getElementById('prev');
+  var next = document.getElementById('next');
+  var index = 0;
+
+  function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+
+  document.getElementById('tot').textContent = pad(slides.length);
+
+  function show(n, animate) {
+    index = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach(function (s, k) {
+      s.hidden = k !== index;
+      s.classList.remove('enter');
+    });
+    if (animate) { void slides[index].offsetWidth; slides[index].classList.add('enter'); }
+    cur.textContent = pad(index + 1);
+    bar.style.width = ((index + 1) / slides.length * 100) + '%';
+    prev.disabled = index === 0;
+    next.disabled = index === slides.length - 1;
+    viewport.scrollTop = 0;
+    try { history.replaceState(null, '', '#s' + (index + 1)); } catch (e) {}
+  }
+
+  /* pickers */
+  var pickers = [
+    { btn: document.getElementById('langBtn'), menu: document.getElementById('langMenu'), attr: 'lang', key: 'deck-lang', def: 'en' },
+    { btn: document.getElementById('modeBtn'), menu: document.getElementById('modeMenu'), attr: 'mode', key: 'deck-mode', def: 'demo' }
+  ];
+
+  function apply(p, value) {
+    root.setAttribute('data-' + p.attr, value);
+    p.btn.textContent = value;
+    p.menu.querySelectorAll('button').forEach(function (b) {
+      b.setAttribute('aria-checked', b.getAttribute('data-' + p.attr) === value ? 'true' : 'false');
+    });
+    if (p.attr === 'lang') root.setAttribute('lang', value === 'pt' ? 'pt-BR' : 'en');
+    store(p.key, value);
+  }
+
+  function closeAll(except) {
+    pickers.forEach(function (p) {
+      if (p === except) return;
+      p.menu.hidden = true;
+      p.btn.setAttribute('aria-expanded', 'false');
+    });
+  }
+
+  pickers.forEach(function (p) {
+    var saved = load(p.key);
+    var options = Array.prototype.map.call(p.menu.querySelectorAll('button'), function (b) { return b.getAttribute('data-' + p.attr); });
+    apply(p, options.indexOf(saved) >= 0 ? saved : p.def);
+
+    p.btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var open = p.menu.hidden;
+      closeAll(p);
+      p.menu.hidden = !open;
+      p.btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open) {
+        var checked = p.menu.querySelector('[aria-checked="true"]');
+        if (checked) checked.focus();
+      }
+    });
+    p.menu.addEventListener('click', function (e) {
+      var b = e.target.closest('button');
+      if (!b) return;
+      e.stopPropagation();
+      apply(p, b.getAttribute('data-' + p.attr));
+      closeAll();
+      p.btn.focus();
+      show(index, false);
+    });
+  });
+
+  document.addEventListener('click', function () { closeAll(); });
+
+  /* navigation */
+  prev.addEventListener('click', function () { show(index - 1, true); });
+  next.addEventListener('click', function () { show(index + 1, true); });
+
+  document.addEventListener('keydown', function (e) {
+    var menuOpen = pickers.some(function (p) { return !p.menu.hidden; });
+    if (e.key === 'Escape') { closeAll(); return; }
+    if (menuOpen) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        var open = pickers.filter(function (p) { return !p.menu.hidden; })[0];
+        var items = Array.prototype.slice.call(open.menu.querySelectorAll('button'));
+        var at = items.indexOf(document.activeElement);
+        var to = e.key === 'ArrowDown' ? (at + 1) % items.length : (at - 1 + items.length) % items.length;
+        items[to].focus();
+        e.preventDefault();
+      }
+      return;
+    }
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === 'ArrowRight' || e.key === 'PageDown' || (e.key === ' ' && root.getAttribute('data-mode') !== 'study')) {
+      show(index + 1, true); e.preventDefault();
+    } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+      show(index - 1, true); e.preventDefault();
+    } else if (e.key === 'Home') {
+      show(0, true); e.preventDefault();
+    } else if (e.key === 'End') {
+      show(slides.length - 1, true); e.preventDefault();
+    }
+  });
+
+  var tx = null, ty = null;
+  viewport.addEventListener('touchstart', function (e) {
+    tx = e.touches[0].clientX; ty = e.touches[0].clientY;
+  }, { passive: true });
+  viewport.addEventListener('touchend', function (e) {
+    if (tx === null) return;
+    var dx = e.changedTouches[0].clientX - tx;
+    var dy = e.changedTouches[0].clientY - ty;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) show(index + (dx < 0 ? 1 : -1), true);
+    tx = ty = null;
+  });
+
+  var m = /^#s(\d+)$/.exec(location.hash);
+  show(m ? parseInt(m[1], 10) - 1 : 0, false);
+})();
+</script>
